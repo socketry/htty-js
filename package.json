@@ -1,0 +1,45 @@
+{
+	"name": "@socketry/htty",
+	"type": "module",
+	"version": "0.0.0",
+	"description": "HTTY transport, client, and server primitives for JavaScript.",
+	"main": "HTTY.js",
+	"exports": {
+		".": "./HTTY.js",
+		"./Handoff": "./HTTY/Handoff.js",
+		"./Transport": "./HTTY/Transport.js",
+		"./Session": "./HTTY/Session.js"
+	},
+	"files": [
+		"HTTY.js",
+		"HTTY/"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/socketry/htty-js.git"
+	},
+	"scripts": {
+		"postinstall": "node scripts/prepare-node-pty.mjs",
+		"test": "node --test"
+	},
+	"keywords": [
+		"htty",
+		"http2",
+		"terminal",
+		"socketry"
+	],
+	"author": "Samuel Williams <samuel.williams@oriontransfer.co.nz> (http://www.codeotaku.com/)",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/socketry/htty-js/issues"
+	},
+	"homepage": "https://github.com/socketry/htty-js#readme",
+	"devDependencies": {
+		"node-pty": "^1.1.0"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"node-pty"
+		]
+	}
+}
