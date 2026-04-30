@@ -18,6 +18,9 @@
 		"type": "git",
 		"url": "git+https://github.com/socketry/htty-js.git"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"postinstall": "node scripts/prepare-node-pty.mjs",
 		"test": "node --test"
