@@ -6,9 +6,7 @@
 	"main": "HTTY.js",
 	"exports": {
 		".": "./HTTY.js",
-		"./Handoff": "./HTTY/Handoff.js",
-		"./Transport": "./HTTY/Transport.js",
-		"./Session": "./HTTY/Session.js"
+		"./*": "./HTTY/*.js"
 	},
 	"files": [
 		"HTTY.js",
