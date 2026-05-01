@@ -22,6 +22,13 @@ export const SESSION_STATUS = {
 	ERROR: "error",
 };
 
+/**
+ * HTTP/2 client endpoint for an already-bootstrapped HTTY session.
+ *
+ * The write callback receives outbound HTTP/2 bytes that should be written to
+ * the command process. Bytes received from the command process after HTTY
+ * takeover should be passed back with handleChunk().
+ */
 export class Client extends EventEmitter {
 	constructor(writeChunk) {
 		super();

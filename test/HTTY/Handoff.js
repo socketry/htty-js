@@ -42,6 +42,15 @@ test("classify detects bootstrap sequence and returns activateRaw", () => {
 	assert.equal(result.plainText, "");
 });
 
+test("classify returns terminal text and trailing raw bytes around bootstrap", () => {
+	const {handoff} = makeHandoff();
+	const trailingBytes = Buffer.from([0x00, 0xff, 0x41]).toString("latin1");
+	const result = handoff.classify(`hello${encodeBootstrap()}${trailingBytes}`);
+	assert.equal(result.activateRaw, true);
+	assert.equal(result.plainText, "hello");
+	assert.equal(result.rawData, trailingBytes);
+});
+
 test("classify routes all data as rawData once active", () => {
 	const {handoff} = makeHandoff();
 	handoff.activate();
@@ -89,6 +98,16 @@ test("interrupt keeps session active until the server's GOAWAY arrives", () => {
 	assert.equal(handoff.session, session, "same session instance during teardown");
 });
 
+test("interrupt is idempotent while waiting for server GOAWAY", () => {
+	const {handoff, writes} = makeHandoff();
+	handoff.activate();
+	
+	handoff.interrupt();
+	handoff.interrupt();
+	
+	assert.equal(writes.length, 1);
+});
+
 test("session is nullified immediately when the server's GOAWAY arrives", () => {
 	const {handoff, resets} = makeHandoff();
 	handoff.activate();
@@ -102,6 +121,90 @@ test("session is nullified immediately when the server's GOAWAY arrives", () => 
 	assert.equal(handoff.session, null);
 	assert.equal(handoff.mode, "terminal");
 	assert.equal(resets.length, 1);
+});
+
+test("handleChunk resets on command-side GOAWAY and returns trailing terminal data", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+	const goaway = Buffer.from([
+		0x00, 0x00, 0x08,
+		0x07,
+		0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x00,
+	]);
+	
+	const result = handoff.handleChunk(Buffer.concat([goaway, Buffer.from("prompt")]));
+	
+	assert.equal(handoff.isActive, false);
+	assert.equal(resets.length, 1);
+	assert.deepEqual(result.forwardedData, Buffer.alloc(0));
+	assert.equal(result.terminalData.toString("latin1"), "prompt");
+});
+
+test("handleChunk only detects GOAWAY at real HTTP/2 frame boundaries", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+	const data = Buffer.from([
+		0x00, 0x00, 0x05,
+		0x00,
+		0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x08, 0x07, 0x00,
+	]);
+	
+	const result = handoff.handleChunk(data);
+	
+	assert.equal(handoff.isActive, true);
+	assert.equal(resets.length, 0);
+	assert.deepEqual(result.forwardedData, data);
+	assert.equal(result.terminalData, null);
+});
+
+test("handleChunk detects GOAWAY split across chunks", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+	const goaway = Buffer.from([
+		0x00, 0x00, 0x08,
+		0x07,
+		0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x00,
+	]);
+	
+	handoff.handleChunk(goaway.subarray(0, 7));
+	const result = handoff.handleChunk(Buffer.concat([goaway.subarray(7), Buffer.from("prompt")]));
+	
+	assert.equal(handoff.isActive, false);
+	assert.equal(resets.length, 1);
+	assert.deepEqual(result.forwardedData, Buffer.alloc(0));
+	assert.equal(result.terminalData.toString("latin1"), "prompt");
+});
+
+test("handleChunk does not scan arbitrary teardown text for GOAWAY", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+	const goaway = Buffer.from([
+		0x00, 0x00, 0x08,
+		0x07,
+		0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x00,
+	]);
+	
+	handoff.interrupt();
+	const result = handoff.handleChunk(Buffer.concat([
+		Buffer.from("too large frame size"),
+		goaway,
+		Buffer.from("prompt"),
+	]));
+	
+	assert.equal(handoff.isActive, true);
+	assert.equal(resets.length, 0);
+	assert.equal(result.terminalData, null);
 });
 
 test("close destroys the session immediately (hard teardown, no GOAWAY)", () => {

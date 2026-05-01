@@ -8,7 +8,7 @@ const app = ({method, path}) => ({
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>HTTY Raw Browser Demo</title>
+		<title>HTTY Styled Browser Demo</title>
 		<style>
 			:root {
 				color-scheme: dark;
@@ -55,9 +55,9 @@ const app = ({method, path}) => ({
 	</head>
 	<body>
 		<main>
-			<div class="badge">HTTY Raw Demo</div>
-			<h1>Chimera switched from DCS bootstrap to plain h2c bytes.</h1>
-			<p>This document was served after the process emitted a DCS bootstrap and handed the session over to raw HTTP/2 transport.</p>
+			<div class="badge">HTTY Styled Demo</div>
+			<h1>The terminal session switched from DCS bootstrap to plain h2c bytes.</h1>
+			<p>This demo page was served after the process emitted a DCS bootstrap and handed the terminal connection over to HTTY transport.</p>
 			<p><strong>Request:</strong> <code>${method} ${path}</code></p>
 		</main>
 	</body>

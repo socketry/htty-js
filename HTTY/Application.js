@@ -1,12 +1,18 @@
-import {assertSupportedEnvironment} from "./Error.js";
 import {normalizeApplicationResponse, readRequestBody} from "./HTTP.js";
 import {Server} from "./Server.js";
 
+/**
+ * Small request/response adapter on top of Server.
+ *
+ * Applications receive normalized method/path/header/body fields and return a
+ * response object. This is convenience API only; HTTY itself still carries
+ * ordinary HTTP/2 streams.
+ */
 export class Application {
-	constructor(app, {requestEncoding = "utf8", ...options} = {}) {
+	constructor(app, {requestEncoding = "utf8", transport, onClose} = {}) {
 		this.app = app;
 		this.requestEncoding = requestEncoding;
-		this.server = new Server(this.handleStream.bind(this), options);
+		this.server = new Server(this.handleStream.bind(this), {transport, onClose});
 	}
 
 	async handleStream(stream, headers) {
@@ -40,10 +46,11 @@ export class Application {
 		return this.server.session;
 	}
 
-	static open(app, {env = process.env, stderr = process.stderr, ...options} = {}) {
-		assertSupportedEnvironment(env, stderr);
-		const application = new Application(app, options);
-		application.start();
+	static open(app, {requestEncoding = "utf8", ...options} = {}) {
+		const application = Object.create(Application.prototype);
+		application.app = app;
+		application.requestEncoding = requestEncoding;
+		application.server = Server.open(application.handleStream.bind(application), options);
 		return application;
 	}
 }

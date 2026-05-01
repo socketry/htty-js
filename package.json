@@ -6,7 +6,14 @@
 	"main": "HTTY.js",
 	"exports": {
 		".": "./HTTY.js",
-		"./*": "./HTTY/*.js"
+		"./Application": "./HTTY/Application.js",
+		"./Bootstrap": "./HTTY/Bootstrap.js",
+		"./Client": "./HTTY/Client.js",
+		"./Error": "./HTTY/Error.js",
+		"./HTTP": "./HTTY/HTTP.js",
+		"./Server": "./HTTY/Server.js",
+		"./Session": "./HTTY/Session.js",
+		"./Transport": "./HTTY/Transport.js"
 	},
 	"files": [
 		"HTTY.js",

@@ -1,7 +1,5 @@
 import {BootstrapDecoder, Client, SESSION_STATUS} from "../HTTY.js";
 
-import {classifyTerminalData} from "./Transport.js";
-
 // Pre-encoded HTTP/2 GOAWAY(NO_ERROR) frame — 17 bytes.
 // Written directly to the PTY by interrupt() so the server receives the
 // close signal immediately, without going through the http/2 client's own
@@ -15,8 +13,28 @@ const GOAWAY_NO_ERROR_FRAME = Buffer.from([
 	0x00, 0x00, 0x00, 0x00,  // error-code = NO_ERROR (0)
 ]);
 
+function classifyTerminalData({data, decoder, httyActive}) {
+	if (httyActive) {
+		return {
+			plainText: "",
+			rawData: data,
+			activateRaw: false,
+		};
+	}
+
+	const {beforeBootstrap, afterBootstrap, bootstraps} = decoder.push(data);
+	return {
+		plainText: beforeBootstrap,
+		rawData: bootstraps.length > 0 ? afterBootstrap : "",
+		activateRaw: bootstraps.some((bootstrap) => bootstrap.mode === "raw"),
+	};
+}
+
 /**
  * Manages the HTTY protocol handoff within a terminal session.
+ *
+ * Internal module: this class is tested directly inside the package, but it is
+ * not exposed as a package subpath. Integrations should use Session instead.
  *
  * All side-effects are delivered via injected callbacks.
  *
@@ -25,7 +43,7 @@ const GOAWAY_NO_ERROR_FRAME = Buffer.from([
  *   TERMINAL  (#session = null)
  *     ↓  bootstrap sequence detected in PTY stdout
  *   HTTY  (#session = live Client)
- *     ↓  interrupt() — user closes surface or presses Ctrl-C
+ *     ↓  interrupt() — caller requests graceful HTTY shutdown
  *        → sends GOAWAY to the server; #session stays non-null so that the
  *          server's bytes (including its own GOAWAY response) keep flowing
  *          through the same http/2 client rather than arriving as garbage
@@ -61,6 +79,8 @@ export class Handoff {
 	#decoder = new BootstrapDecoder();
 	#session = null;
 	#mode = "terminal";
+	#closing = false;
+	#frameBuffer = Buffer.alloc(0);
 
 	constructor({write, onSessionState, onSessionCreated, onReset} = {}) {
 		this.#write = write;
@@ -87,6 +107,55 @@ export class Handoff {
 	classify(data) {
 		return classifyTerminalData({data, decoder: this.#decoder, httyActive: this.#session !== null});
 	}
+	
+	handleChunk(chunk) {
+		if (!this.#session) {
+			return {forwardedData: null, terminalData: chunk};
+		}
+		
+		const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "latin1");
+		this.#frameBuffer = this.#frameBuffer.length > 0 ? Buffer.concat([this.#frameBuffer, data]) : data;
+		
+		const frames = [];
+		let offset = 0;
+		
+		while (offset + 9 <= this.#frameBuffer.length) {
+			const length = (this.#frameBuffer[offset] << 16) | (this.#frameBuffer[offset + 1] << 8) | this.#frameBuffer[offset + 2];
+			const type = this.#frameBuffer[offset + 3];
+			const streamId = this.#frameBuffer.readUInt32BE(offset + 5) & 0x7fffffff;
+			const frameEnd = offset + 9 + length;
+			
+			if (frameEnd > this.#frameBuffer.length) {
+				break;
+			}
+			
+			if (type === 0x07 && streamId === 0) {
+				const session = this.#session;
+				const forwardedData = frames.length > 0 ? Buffer.concat(frames) : Buffer.alloc(0);
+				const terminalData = this.#frameBuffer.subarray(frameEnd);
+				
+				if (forwardedData.length > 0) {
+					session.handleChunk(forwardedData);
+				}
+				
+				this.#resetSession(session);
+				
+				return {forwardedData, terminalData};
+			}
+			
+			frames.push(this.#frameBuffer.subarray(offset, frameEnd));
+			offset = frameEnd;
+		}
+		
+		this.#frameBuffer = this.#frameBuffer.subarray(offset);
+		const forwardedData = frames.length > 0 ? Buffer.concat(frames) : null;
+		
+		if (forwardedData) {
+			this.#session.handleChunk(forwardedData);
+		}
+		
+		return {forwardedData, terminalData: null};
+	}
 
 	// ── Transitions ────────────────────────────────────────────────────────
 
@@ -96,6 +165,8 @@ export class Handoff {
 	 */
 	activate() {
 		this.#mode = "htty";
+		this.#closing = false;
+		this.#frameBuffer = Buffer.alloc(0);
 		this.#createSession();
 		this.#session.start();
 		return this.#session;
@@ -117,6 +188,11 @@ export class Handoff {
 	 */
 	interrupt() {
 		if (this.#session) {
+			if (this.#closing) {
+				return;
+			}
+			
+			this.#closing = true;
 			try { this.#write?.(GOAWAY_NO_ERROR_FRAME); } catch { /* ignore */ }
 		}
 	}
@@ -144,6 +220,8 @@ export class Handoff {
 		const session = this.#session;
 		this.#session = null;
 		this.#mode = "terminal";
+		this.#closing = false;
+		this.#frameBuffer = Buffer.alloc(0);
 		try { session?.client?.destroy(); } catch { /* ignore */ }
 		try { session?.transport?.destroy(); } catch { /* ignore */ }
 	}
@@ -169,11 +247,7 @@ export class Handoff {
 			// not fed to a stale http/2 client.
 			if (state.status === SESSION_STATUS.CLOSING && state.phase === "goaway") {
 				if (this.#session === session) {
-					this.#session = null;
-					this.#mode = "terminal";
-					// Now that we've finished with it, destroy the old session.
-					try { session.client?.destroy(); } catch { /* ignore */ }
-					this.#onReset?.();
+					this.#resetSession(session);
 				}
 				return;
 			}
@@ -182,14 +256,20 @@ export class Handoff {
 			// (e.g. transport EOF when the process exits, or a protocol error).
 			if (state.status === SESSION_STATUS.CLOSED || state.status === SESSION_STATUS.ERROR) {
 				if (this.#session === session) {
-					this.#session = null;
-					this.#mode = "terminal";
-					try { session.client?.destroy(); } catch { /* ignore */ }
-					this.#onReset?.();
+					this.#resetSession(session);
 				}
 			}
 		});
 
 		return session;
+	}
+	
+	#resetSession(session) {
+		this.#session = null;
+		this.#mode = "terminal";
+		this.#closing = false;
+		this.#frameBuffer = Buffer.alloc(0);
+		try { session.client?.destroy(); } catch { /* ignore */ }
+		this.#onReset?.();
 	}
 }

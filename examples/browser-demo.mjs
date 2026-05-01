@@ -64,8 +64,8 @@ const app = ({method, path}) => ({
 	<body>
 		<main>
 			<div class="badge">HTTY Browser Demo</div>
-			<h1>Attached browser surface over a normal terminal session.</h1>
-			<p>This page is served by a plain HTTP/2 application running inside the command process. Chimera keeps the terminal visible and mounts this document alongside it once the HTTY session becomes ready.</p>
+			<h1>Browser surface served over a terminal-backed HTTY session.</h1>
+			<p>This page is served by a plain HTTP/2 application running inside the command process. The browser surface is part of the demo UI; HTTY itself only carries the byte-preserving h2c session.</p>
 			<div class="card">
 				<strong>Request:</strong> ${method} ${path}
 			</div>

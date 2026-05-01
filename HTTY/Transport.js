@@ -16,6 +16,12 @@ export function chunkToBuffer(chunk, encoding = "utf8") {
 	return Buffer.from(chunk ?? []);
 }
 
+/**
+ * Duplex byte bridge used by Node's http2 client/server sessions.
+ *
+ * Writes from http2 are delivered to the injected writeChunk callback. Incoming
+ * bytes from the peer are pushed into the readable side with acceptChunk().
+ */
 export class Transport extends Duplex {
 	constructor(writeChunk) {
 		super();
@@ -31,6 +37,11 @@ export class Transport extends Duplex {
 
 	_write(chunk, _encoding, callback) {
 		try {
+			if (this.localClosed) {
+				callback();
+				return;
+			}
+			
 			if (chunk.length > 0) {
 				this.writeChunk(chunkToBuffer(chunk));
 			}
@@ -71,29 +82,4 @@ export class Transport extends Duplex {
 		this.endRemote();
 		this.destroy();
 	}
-}
-
-export function terminalChunkPreview(data, encoding = "latin1") {
-	const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data, encoding);
-	return {
-		length: chunk.length,
-		preview: chunk.toString("hex").slice(0, 80),
-	};
-}
-
-export function classifyTerminalData({data, decoder, httyActive}) {
-	if (httyActive) {
-		return {
-			plainText: "",
-			rawData: data,
-			activateRaw: false,
-		};
-	}
-
-	const {beforeBootstrap, afterBootstrap, bootstraps} = decoder.push(data);
-	return {
-		plainText: beforeBootstrap,
-		rawData: bootstraps.length > 0 ? afterBootstrap : "",
-		activateRaw: bootstraps.some((bootstrap) => bootstrap.mode === "raw"),
-	};
 }

@@ -32,6 +32,7 @@ function spawnFixture(name) {
 		encoding: null,
 		cols: 80,
 		rows: 24,
+		env: {...process.env, HTTY: "1"},
 	});
 	
 	return child;
@@ -206,6 +207,44 @@ test("PTY runs an HTTP/2 session until command-side GOAWAY", async () => {
 		
 		assert.equal(response.status, 200);
 		assert.equal(response.body, "OK");
+		
+		client.close();
+	});
+});
+
+test("PTY preserves newline bytes in HTTP/2 DATA frames", async () => {
+	await withFixture("http2-server-newline.mjs", async (child) => {
+		const decoder = new BootstrapDecoder();
+		
+		const output = await waitFor(child, (buffer) => {
+			const decoded = decoder.push(buffer);
+			return decoded.bootstraps.length > 0 ? decoded : null;
+		});
+		
+		const transport = new PTYTransport(child);
+		if (output.afterBootstrap) {
+			transport.push(Buffer.from(output.afterBootstrap, "latin1"));
+		}
+		
+		const client = http2.connect("http://htty.local", {
+			createConnection: () => transport,
+		});
+		client.on("error", () => {});
+		
+		const response = await new Promise((resolve, reject) => {
+			const request = client.request({":method": "GET", ":path": "/"});
+			let body = "";
+			
+			request.setEncoding("utf8");
+			request.on("data", (chunk) => {
+				body += chunk;
+			});
+			request.on("end", () => resolve(body));
+			request.on("error", reject);
+			request.end();
+		});
+		
+		assert.equal(response, "OK\n");
 		
 		client.close();
 	});
