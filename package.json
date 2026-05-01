@@ -27,7 +27,6 @@
 		"access": "public"
 	},
 	"scripts": {
-		"postinstall": "node scripts/prepare-node-pty.mjs",
 		"test": "node --test"
 	},
 	"keywords": [
