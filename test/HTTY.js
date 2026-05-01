@@ -335,3 +335,31 @@ test("strips terminal control noise before the client preface arrives", () => {
 	assert.equal(payload.toString("latin1"), "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
 	server.close();
 });
+
+test("preserves binary frame bytes after the client preface", () => {
+	let payload = null;
+	const settingsFrame = Buffer.from([
+		0x00, 0x00, 0x00,
+		0x04,
+		0x00,
+		0x00, 0x00, 0x00, 0x00,
+	]);
+	const server = new Server(() => {}, {
+		raw: true,
+	});
+	server.transport.acceptChunk = (chunk) => {
+		payload = Buffer.from(chunk);
+	};
+	
+	server.handleInputData(Buffer.concat([
+		Buffer.from("\u001b[Iprompt>", "latin1"),
+		Buffer.from("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", "latin1"),
+		settingsFrame,
+	]));
+	
+	assert.deepEqual(payload, Buffer.concat([
+		Buffer.from("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", "latin1"),
+		settingsFrame,
+	]));
+	server.close();
+});

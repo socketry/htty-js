@@ -3,7 +3,7 @@ import http2 from "node:http2";
 
 import {encodeBootstrap} from "./Bootstrap.js";
 import {assertSupportedEnvironment} from "./Error.js";
-import {HTTP2_CLIENT_PREFACE, sanitizePrefaceInput, trimToPotentialPreface} from "./HTTP.js";
+import {HTTP2_CLIENT_PREFACE, trimToPotentialPreface} from "./HTTP.js";
 import {chunkToBuffer, Transport} from "./Transport.js";
 
 export class Server extends EventEmitter {
@@ -29,7 +29,7 @@ export class Server extends EventEmitter {
 			}
 
 			if (this.awaitingClientPreface) {
-				this.prefaceBuffer += sanitizePrefaceInput(data.toString("latin1"));
+				this.prefaceBuffer += data.toString("latin1");
 				const prefaceIndex = this.prefaceBuffer.indexOf(HTTP2_CLIENT_PREFACE);
 
 				if (prefaceIndex === -1) {
