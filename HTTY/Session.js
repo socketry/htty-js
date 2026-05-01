@@ -1,4 +1,5 @@
 import {EventEmitter} from "node:events";
+import {StringDecoder} from "node:string_decoder";
 
 import {SESSION_STATUS} from "../HTTY.js";
 import {Handoff} from "./Handoff.js";
@@ -58,6 +59,7 @@ import {Handoff} from "./Handoff.js";
 export class Session extends EventEmitter {
 	#process;
 	#handoff;
+	#terminalDecoder = new StringDecoder("utf8");
 
 	constructor(process, options = {}) {
 		super();
@@ -208,10 +210,14 @@ export class Session extends EventEmitter {
 		const {plainText, rawData, activateRaw} = this.#handoff.classify(data);
 
 		if (plainText) {
-			this.emit("terminal-data", plainText);
+			this.emit("terminal-data", this.#terminalDecoder.write(Buffer.from(plainText, "latin1")));
 		}
 
 		if (activateRaw) {
+			const trailing = this.#terminalDecoder.end();
+			if (trailing) {
+				this.emit("terminal-data", trailing);
+			}
 			this.#handoff.activate();
 		}
 
@@ -219,7 +225,7 @@ export class Session extends EventEmitter {
 			const {forwardedData, terminalData} = this.#handoff.handleChunk(rawData);
 			
 			if (terminalData?.length) {
-				this.emit("terminal-data", terminalData.toString("latin1"));
+				this.emit("terminal-data", this.#terminalDecoder.write(Buffer.from(terminalData)));
 			}
 		}
 	}

@@ -79,6 +79,19 @@ test("emits terminal-data for plain PTY output", () => {
 	assert.deepEqual(received, ["hello\r\n"]);
 });
 
+test("decodes UTF-8 terminal output split across chunks", () => {
+	const {proc, session} = makeSession();
+	const received = [];
+	const bytes = Buffer.from("│─┌ process\n", "utf8");
+	
+	session.on("terminal-data", (text) => received.push(text));
+	proc.push(bytes.subarray(0, 1));
+	proc.push(bytes.subarray(1, 5));
+	proc.push(bytes.subarray(5));
+	
+	assert.equal(received.join(""), "│─┌ process\n");
+});
+
 test("does not emit terminal-data for HTTY bootstrap escape", () => {
 	const {proc, session} = makeSession();
 	const received = [];
