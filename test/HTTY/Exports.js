@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 test("package root exposes the intended public API", async () => {
-	const root = await import("@socketry/htty");
+	const root = await import("htty");
 	
 	assert.equal(typeof root.Application, "function");
 	assert.equal(typeof root.BootstrapDecoder, "function");
@@ -30,7 +30,7 @@ test("package subpaths expose supported modules explicitly", async () => {
 	};
 	
 	for (const [subpath, names] of Object.entries(modules)) {
-		const mod = await import(`@socketry/htty/${subpath}`);
+		const mod = await import(`htty/${subpath}`);
 		
 		for (const name of names) {
 			assert.notEqual(mod[name], undefined, `expected ${subpath} to export ${name}`);
@@ -40,7 +40,7 @@ test("package subpaths expose supported modules explicitly", async () => {
 
 test("internal handoff module is not package-exported", async () => {
 	await assert.rejects(
-		() => import("@socketry/htty/Handoff"),
+		() => import("htty/Handoff"),
 		(error) => error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED",
 	);
 });

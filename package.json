@@ -1,5 +1,5 @@
 {
-	"name": "@socketry/htty",
+	"name": "htty",
 	"type": "module",
 	"version": "0.1.1",
 	"description": "HTTY transport, client, and server primitives for JavaScript.",

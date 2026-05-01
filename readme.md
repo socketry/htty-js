@@ -1,4 +1,4 @@
-# @socketry/htty
+# htty
 
 JavaScript HTTY transport, client, and server primitives.
 
@@ -7,7 +7,7 @@ This package is the primary HTTY implementation used by Chimera for its default 
 ## Installation
 
 ```bash
-npm install @socketry/htty
+npm install htty
 ```
 
 ## Protocol Shape
@@ -35,19 +35,19 @@ import {
 	Transport,
 	decodeBootstrap,
 	encodeBootstrap,
-} from "@socketry/htty";
+} from "htty";
 ```
 
 Focused submodules are also available:
 
-- `@socketry/htty/Application`
-- `@socketry/htty/Bootstrap`
-- `@socketry/htty/Client`
-- `@socketry/htty/Error`
-- `@socketry/htty/HTTP`
-- `@socketry/htty/Server`
-- `@socketry/htty/Session`
-- `@socketry/htty/Transport`
+- `htty/Application`
+- `htty/Bootstrap`
+- `htty/Client`
+- `htty/Error`
+- `htty/HTTP`
+- `htty/Server`
+- `htty/Session`
+- `htty/Transport`
 
 `Handoff` is intentionally internal. Terminal integrations should use `Session`, its events, and `isHttyActive()` rather than depending on the handoff state machine directly.
 
@@ -60,7 +60,7 @@ Focused submodules are also available:
 The constructor receives a `writeChunk` callback. Every byte written by Node's HTTP/2 client is passed to this callback; terminal integrations should forward those bytes to the command process. Bytes received from the command process after takeover must be fed back with `client.handleChunk(chunk)`.
 
 ```javascript
-import {Client} from "@socketry/htty";
+import {Client} from "htty";
 
 const client = new Client((chunk) => {
 	// Outbound HTTP/2 bytes: send these to the command process stdin.
@@ -97,7 +97,7 @@ The HTTY bootstrap itself is usually detected outside `Client`, by `BootstrapDec
 Use `Server.open()` for command processes connected to stdio. It checks the HTTY environment, puts TTY input into byte-preserving mode when possible, emits the bootstrap, filters terminal noise before the HTTP/2 client preface, and then starts Node's server-side HTTP/2 session.
 
 ```javascript
-import {Server} from "@socketry/htty";
+import {Server} from "htty";
 
 Server.open((stream, headers) => {
 	stream.respond({
@@ -112,7 +112,7 @@ Server.open((stream, headers) => {
 Use `new Server(app, {transport})` when you already have a byte-preserving transport:
 
 ```javascript
-import {Server, Transport} from "@socketry/htty";
+import {Server, Transport} from "htty";
 
 const transport = new Transport((chunk) => {
 	remote.write(chunk);
@@ -135,7 +135,7 @@ server.start();
 `Application` is a convenience wrapper for typical request/response apps. It is not a separate protocol layer.
 
 ```javascript
-import {Application} from "@socketry/htty";
+import {Application} from "htty";
 
 Application.open(({method, path}) => ({
 	status: 200,
@@ -153,7 +153,7 @@ import {
 	normalizeRequestHeaders,
 	readRequestBody,
 	sanitizeResponseHeaders,
-} from "@socketry/htty/HTTP";
+} from "htty/HTTP";
 ```
 
 These are useful for application adapters and tests, but the core API remains the raw HTTP/2 interface exposed by Node.
@@ -163,7 +163,7 @@ These are useful for application adapters and tests, but the core API remains th
 `Session` is for terminal-emulator integrations such as [Chimera](https://github.com/socketry/chimera). It wraps a process handle, watches terminal output for the HTTY bootstrap, and routes bytes between terminal mode and the HTTP/2 client.
 
 ```javascript
-import {Session} from "@socketry/htty/Session";
+import {Session} from "htty/Session";
 
 const session = new Session(processHandle, {
 	id: "terminal-1",
@@ -196,4 +196,4 @@ HTTY itself stays intentionally small. The v1 transport is a DCS bootstrap follo
 
 ## Chimera Integration
 
-In this workspace, Chimera consumes `@socketry/htty` through a local file dependency and launches the example servers from this package by default.
+In this workspace, Chimera consumes this package through a local file dependency and launches the example servers from this package by default.
