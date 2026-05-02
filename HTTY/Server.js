@@ -38,6 +38,51 @@ function enableRawMode(input, raw) {
 	}
 }
 
+// Keep a private writer for HTTY protocol bytes before suppressing public
+// writes to the same stream. This lets bootstrap/HTTP2 output continue while
+// console.log or other incidental writes are dropped.
+function captureWritable(stream) {
+	if (typeof stream?.write === "function") {
+		return {
+			write: stream.write.bind(stream),
+		};
+	}
+	
+	return stream;
+}
+
+// Node streams report write completion through an optional callback; preserve
+// that contract even though the bytes are intentionally discarded.
+function nullWrite(_chunk, encoding, callback) {
+	if (typeof encoding === "function") {
+		encoding();
+	} else if (typeof callback === "function") {
+		callback();
+	}
+	
+	return true;
+}
+
+// Node stdio streams do not provide a descriptor-level reopen operation, so
+// temporarily replace write() and restore it when the HTTY session closes.
+function suppressWritable(stream) {
+	if (typeof stream?.write === "function") {
+		const write = stream.write;
+		stream.write = nullWrite;
+		return () => {
+			stream.write = write;
+		};
+	}
+	
+	return null;
+}
+
+function restoreWritableStreams(restorers) {
+	for (const restore of restorers.splice(0).reverse()) {
+		restore?.();
+	}
+}
+
 function openTerminalTransport({input = process.stdin, output = process.stdout, raw = true} = {}) {
 	const transport = new Transport((chunk) => {
 		output.write(chunk);
@@ -170,19 +215,38 @@ export class Server extends EventEmitter {
 		}
 	}
 
-	static open(app, {env = process.env, stderr = process.stderr, ...options} = {}) {
+	static open(app, {input = process.stdin, output = process.stdout, stderr = process.stderr, env = process.env, ...options} = {}) {
 		assertSupportedEnvironment(env, stderr);
-		const terminal = openTerminalTransport(options);
+		
+		const protocolOutput = captureWritable(output);
+		const restorers = [];
+		
+		const terminal = openTerminalTransport({
+			...options,
+			input,
+			output: protocolOutput,
+		});
 		const server = new Server(app, {
 			transport: terminal.transport,
-			onClose: () => terminal.close(),
+			onClose: () => {
+				terminal.close();
+				restoreWritableStreams(restorers);
+			},
 		});
-		terminal.start();
+		
 		try {
+			// Suppress public output only after the protocol writer has been captured.
+			// This protects HTTY framing from console output and logging noise.
+			restorers.push(
+				suppressWritable(output),
+				suppressWritable(stderr),
+			);
+			terminal.start();
 			server.start();
 		} catch (error) {
 			terminal.close();
 			terminal.transport.shutdown();
+			restoreWritableStreams(restorers);
 			throw error;
 		}
 		return server;

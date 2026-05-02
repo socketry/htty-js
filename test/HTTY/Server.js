@@ -175,3 +175,73 @@ test("preserves binary frame bytes after the client preface", () => {
 	]));
 	server.close();
 });
+
+test("Server.open restores writable streams if startup fails after suppression", () => {
+	const input = new PassThrough();
+	const output = {
+		write() {
+			throw new Error("write failed");
+		},
+	};
+	const stderr = {
+		write() {
+			return true;
+		},
+	};
+	const originalOutputWrite = output.write;
+	const originalStderrWrite = stderr.write;
+	
+	assert.throws(
+		() => Server.open(() => {}, {
+			input,
+			output,
+			stderr,
+			raw: false,
+			env: {HTTY: "1"},
+		}),
+		/write failed/,
+	);
+	
+	assert.equal(output.write, originalOutputWrite);
+	assert.equal(stderr.write, originalStderrWrite);
+});
+
+test("Server.open suppresses ordinary writable streams while running and restores them after close", async () => {
+	const input = new PassThrough();
+	const outputWrites = [];
+	const stderrWrites = [];
+	const output = {
+		write(chunk) {
+			outputWrites.push(String(chunk));
+			return true;
+		},
+	};
+	const stderr = {
+		write(chunk) {
+			stderrWrites.push(String(chunk));
+			return true;
+		},
+	};
+	
+	const server = Server.open(() => {}, {
+		input,
+		output,
+		stderr,
+		raw: false,
+		env: {HTTY: "1"},
+	});
+	const bootstrapWrites = outputWrites.length;
+	
+	output.write("noise");
+	stderr.write("log");
+	assert.equal(outputWrites.length, bootstrapWrites);
+	assert.deepEqual(stderrWrites, []);
+	
+	server.close();
+	await new Promise((resolve) => setImmediate(resolve));
+	
+	output.write("after");
+	stderr.write("after-error");
+	assert.equal(outputWrites.at(-1), "after");
+	assert.equal(stderrWrites.at(-1), "after-error");
+});
