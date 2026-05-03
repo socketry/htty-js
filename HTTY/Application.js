@@ -1,5 +1,32 @@
+import {Readable} from "node:stream";
+
 import {normalizeApplicationResponse, readRequestBody} from "./HTTP.js";
 import {Server} from "./Server.js";
+
+function sendResponseBody(stream, body) {
+	if (body == null) {
+		stream.end();
+		return;
+	}
+
+	if (typeof body.pipe === "function") {
+		body.on?.("error", (error) => stream.destroy(error));
+		body.pipe(stream);
+		return;
+	}
+
+	if (typeof body.getReader === "function") {
+		Readable.fromWeb(body).pipe(stream);
+		return;
+	}
+
+	if (typeof body[Symbol.asyncIterator] === "function") {
+		Readable.from(body).pipe(stream);
+		return;
+	}
+
+	stream.end(body);
+}
 
 /**
  * Small request/response adapter on top of Server.
@@ -31,7 +58,7 @@ export class Application {
 			...response.headers,
 		});
 
-		stream.end(response.body);
+		sendResponseBody(stream, response.body);
 	}
 
 	start() {

@@ -1,5 +1,6 @@
 import {EventEmitter} from "node:events";
 import http2 from "node:http2";
+import {Readable} from "node:stream";
 
 import {DEFAULT_AUTHORITY, normalizeRequestHeaders, sanitizeResponseHeaders} from "./HTTP.js";
 import {Transport} from "./Transport.js";
@@ -21,6 +22,41 @@ export const SESSION_STATUS = {
 	CLOSED: "closed",
 	ERROR: "error",
 };
+
+function pipeRequestBody(stream, body) {
+	if (body == null) {
+		stream.end();
+		return;
+	}
+
+	if (typeof body.pipe === "function") {
+		body.on?.("error", (error) => stream.destroy(error));
+		body.pipe(stream);
+		return;
+	}
+
+	if (typeof body.getReader === "function") {
+		Readable.fromWeb(body).pipe(stream);
+		return;
+	}
+
+	if (typeof body[Symbol.asyncIterator] === "function") {
+		Readable.from(body).pipe(stream);
+		return;
+	}
+
+	stream.end(body);
+}
+
+async function readResponseBuffer(body) {
+	const chunks = [];
+
+	for await (const chunk of body) {
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	}
+
+	return Buffer.concat(chunks);
+}
 
 /**
  * HTTP/2 client endpoint for an already-bootstrapped HTTY session.
@@ -106,30 +142,49 @@ export class Client extends EventEmitter {
 		return new Promise((resolve, reject) => {
 			const requestHeaders = normalizeRequestHeaders({path, method, headers});
 			const stream = client.request(requestHeaders);
-			const chunks = [];
 			let responseHeaders = {};
 			let responseStatus = 0;
-
-			stream.setEncoding("utf8");
+			let settled = false;
 
 			stream.on("response", (incomingHeaders) => {
 				responseStatus = Number(incomingHeaders[":status"] || 0);
 				responseHeaders = sanitizeResponseHeaders(incomingHeaders);
+				settled = true;
+				resolve({
+					status: responseStatus,
+					headers: responseHeaders,
+					body: stream,
+					stream,
+				});
 			});
-			stream.on("data", (chunk) => chunks.push(chunk));
-			stream.on("end", () => resolve({
-				status: responseStatus,
-				headers: responseHeaders,
-				body: chunks.join(""),
-			}));
-			stream.on("error", reject);
+			stream.on("error", (error) => {
+				if (!settled) {
+					reject(error);
+				}
+			});
 
-			if (body) {
-				stream.end(body);
-			} else {
-				stream.end();
-			}
+			pipeRequestBody(stream, body);
 		});
+	}
+
+	async requestBuffer(options = {}) {
+		const response = await this.request(options);
+		const {status, headers} = response;
+		return {
+			status,
+			headers,
+			body: await readResponseBuffer(response.body),
+		};
+	}
+
+	async requestText(options = {}) {
+		const response = await this.requestBuffer(options);
+		const {status, headers} = response;
+		return {
+			status,
+			headers,
+			body: response.body.toString("utf8"),
+		};
 	}
 
 	close() {

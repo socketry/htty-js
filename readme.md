@@ -77,10 +77,22 @@ client.on("state", (state) => {
 });
 ```
 
-Once connected, use `request()` for a small convenience wrapper around Node's client stream API:
+Once connected, use `request()` to send a streaming request and receive a streaming response:
 
 ```javascript
 const response = await client.request({
+	method: "GET",
+	path: "/status",
+});
+
+console.log(response.status);
+response.body.pipe(process.stdout);
+```
+
+Use `requestText()` or `requestBuffer()` when a caller specifically wants a buffered convenience response:
+
+```javascript
+const response = await client.requestText({
 	method: "GET",
 	path: "/status",
 });

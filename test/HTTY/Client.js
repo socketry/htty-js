@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {PassThrough} from "node:stream";
 import test from "node:test";
 
 import {Client, SESSION_STATUS} from "../../HTTY/Client.js";
@@ -68,10 +69,67 @@ test("marks raw client sessions as attached once the connection is established",
 		server.close();
 	});
 	
-	await client.request({path: "/ready"});
+	await client.requestText({path: "/ready"});
 	
 	assert.deepEqual(states.map((state) => state.status), [SESSION_STATUS.ATTACHED, SESSION_STATUS.ATTACHED]);
 	assert.deepEqual(states[0], {status: SESSION_STATUS.ATTACHED, phase: "connected"});
 	assert.equal(states[1].status, SESSION_STATUS.ATTACHED);
 	assert.equal(states[1].phase, "ready");
+});
+
+test("request streams request and response bodies", async (context) => {
+	const {client, server} = connectClientToServer((stream) => {
+		stream.respond({
+			":status": 200,
+			"content-type": "text/plain; charset=utf-8",
+		});
+		stream.write("response:");
+		stream.on("data", (chunk) => stream.write(chunk));
+		stream.on("end", () => stream.end());
+	});
+	const body = new PassThrough();
+
+	context.after(() => {
+		client.close();
+		server.close();
+	});
+
+	const responsePromise = client.request({
+		method: "POST",
+		path: "/stream",
+		body,
+	});
+	body.write("hello");
+	body.end(" world");
+
+	const response = await responsePromise;
+	const chunks = [];
+	for await (const chunk of response.body) {
+		chunks.push(Buffer.from(chunk));
+	}
+
+	assert.equal(response.status, 200);
+	assert.equal(response.headers["content-type"], "text/plain; charset=utf-8");
+	assert.equal(Buffer.concat(chunks).toString("utf8"), "response:hello world");
+});
+
+test("requestText buffers response bodies explicitly", async (context) => {
+	const {client, server} = connectClientToServer((stream) => {
+		stream.respond({
+			":status": 200,
+			"content-type": "text/plain; charset=utf-8",
+		});
+		stream.end("buffered");
+	});
+
+	context.after(() => {
+		client.close();
+		server.close();
+	});
+
+	const response = await client.requestText({path: "/text"});
+
+	assert.equal(response.status, 200);
+	assert.equal(response.headers["content-type"], "text/plain; charset=utf-8");
+	assert.equal(response.body, "buffered");
 });

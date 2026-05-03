@@ -39,7 +39,7 @@ test("serves responses through a JS HTTY server", async (context) => {
 		server.close();
 	});
 	
-	const response = await client.request({path: "/demo"});
+	const response = await client.requestText({path: "/demo"});
 	assert.equal(response.status, 200);
 	assert.equal(response.body, "GET /demo");
 	assert.equal(response.headers["content-type"], "text/plain; charset=utf-8");
@@ -56,7 +56,7 @@ test("server closes after client-side GOAWAY", async (context) => {
 		server.close();
 	});
 	
-	await client.request({path: "/close"});
+	await client.requestText({path: "/close"});
 	
 	const closed = new Promise((resolve) => {
 		server.session.once("close", resolve);
@@ -84,7 +84,7 @@ test("passes the request body through the live HTTP/2 stream", async (context) =
 		server.close();
 	});
 	
-	const response = await client.request({
+	const response = await client.requestText({
 		method: "POST",
 		path: "/submit",
 		body: "name=chimera",
