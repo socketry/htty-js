@@ -124,6 +124,7 @@ test("negotiates http/2 and reaches ATTACHED state via loopback", async (context
 	});
 
 	const serverInput = new PassThrough();
+	serverInput.isTTY = true;
 	// Redirect Session's outbound writes (via proc.write) into the server input.
 	proc.write = (chunk) => { serverInput.write(chunk); };
 
@@ -291,6 +292,7 @@ test("second server connection succeeds after Server.close() with no residual GO
 	// ── First connection ──────────────────────────────────────────────────────
 
 	const serverInput1 = new PassThrough();
+	serverInput1.isTTY = true;
 	proc.write = (chunk) => { serverInput1.write(chunk); };
 	const firstConnection = new Promise((resolve) => {
 		session.on("attached", function onAttached() {
@@ -325,6 +327,7 @@ test("second server connection succeeds after Server.close() with no residual GO
 	// ── Second connection ─────────────────────────────────────────────────────
 
 	const serverInput2 = new PassThrough();
+	serverInput2.isTTY = true;
 	proc.write = (chunk) => { serverInput2.write(chunk); };
 
 	const states2 = [];

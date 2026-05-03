@@ -9,6 +9,7 @@ import {UnsupportedError} from "../../HTTY/Error.js";
 
 test("serves responses through Application's higher-level request wrapper", async (context) => {
 	const serverInput = new PassThrough();
+	serverInput.isTTY = true;
 	const clientInput = new PassThrough();
 	const decoder = new BootstrapDecoder();
 	const client = new Client((chunk) => {

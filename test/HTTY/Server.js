@@ -6,7 +6,7 @@ import {Client} from "../../HTTY/Client.js";
 import {HTTP2_CLIENT_PREFACE, readRequestBody} from "../../HTTY/HTTP.js";
 import {Server} from "../../HTTY/Server.js";
 import {Transport} from "../../HTTY/Transport.js";
-import {DisabledError} from "../../HTTY/Error.js";
+import {DisabledError, UnsupportedError} from "../../HTTY/Error.js";
 
 function connectClientToServer(app) {
 	let server;
@@ -103,6 +103,7 @@ test("Server.open checks disabled HTTY support", () => {
 
 test("treats byte 0x03 as ordinary raw transport data", () => {
 	const input = new PassThrough();
+	input.isTTY = true;
 	const payloads = [];
 	const server = Server.open(() => {}, {
 		input,
@@ -125,6 +126,7 @@ test("treats byte 0x03 as ordinary raw transport data", () => {
 
 test("strips terminal control noise before the client preface arrives", () => {
 	const input = new PassThrough();
+	input.isTTY = true;
 	let payload = null;
 	const server = Server.open(() => {}, {
 		input,
@@ -146,6 +148,7 @@ test("strips terminal control noise before the client preface arrives", () => {
 
 test("preserves binary frame bytes after the client preface", () => {
 	const input = new PassThrough();
+	input.isTTY = true;
 	let payload = null;
 	const settingsFrame = Buffer.from([
 		0x00, 0x00, 0x00,
@@ -178,6 +181,7 @@ test("preserves binary frame bytes after the client preface", () => {
 
 test("Server.open restores writable streams if startup fails after suppression", () => {
 	const input = new PassThrough();
+	input.isTTY = true;
 	const output = {
 		write() {
 			throw new Error("write failed");
@@ -208,6 +212,7 @@ test("Server.open restores writable streams if startup fails after suppression",
 
 test("Server.open suppresses ordinary writable streams while running and restores them after close", async () => {
 	const input = new PassThrough();
+	input.isTTY = true;
 	const outputWrites = [];
 	const stderrWrites = [];
 	const output = {
@@ -244,4 +249,18 @@ test("Server.open suppresses ordinary writable streams while running and restore
 	stderr.write("after-error");
 	assert.equal(outputWrites.at(-1), "after");
 	assert.equal(stderrWrites.at(-1), "after-error");
+});
+
+test("Server.open rejects non-TTY stdin", () => {
+	const input = new PassThrough();
+
+	assert.throws(
+		() => Server.open(() => {}, {
+			input,
+			output: {write() {}},
+			raw: false,
+			env: {HTTY: "1"},
+		}),
+		UnsupportedError,
+	);
 });

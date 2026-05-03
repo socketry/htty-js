@@ -3,7 +3,7 @@ import {EventEmitter} from "node:events";
 import http2 from "node:http2";
 
 import {encodeBootstrap} from "./Bootstrap.js";
-import {assertSupportedEnvironment} from "./Error.js";
+import {UnsupportedError, assertSupportedEnvironment} from "./Error.js";
 import {HTTP2_CLIENT_PREFACE, trimToPotentialPreface} from "./HTTP.js";
 import {chunkToBuffer, Transport} from "./Transport.js";
 
@@ -217,6 +217,10 @@ export class Server extends EventEmitter {
 
 	static open(app, {input = process.stdin, output = process.stdout, stderr = process.stderr, env = process.env, ...options} = {}) {
 		assertSupportedEnvironment(env, stderr);
+
+		if (!input?.isTTY) {
+			throw new UnsupportedError("HTTY requires a TTY input stream.");
+		}
 		
 		const protocolOutput = captureWritable(output);
 		const restorers = [];
