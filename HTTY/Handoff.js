@@ -82,6 +82,10 @@ export class Handoff {
 	#closing = false;
 	#frameBuffer = Buffer.alloc(0);
 
+	#isThenable(value) {
+		return value && (typeof value === "object" || typeof value === "function") && typeof value.then === "function";
+	}
+
 	constructor({write, onSessionState, onSessionCreated, onReset} = {}) {
 		this.#write = write;
 		this.#onSessionState = onSessionState;
@@ -194,11 +198,23 @@ export class Handoff {
 			
 			this.#closing = true;
 			try {
-				this.#session?.sendGoaway?.({
-					errorCode: 0,
-					lastStreamID: 0,
-				});
-				this.#session?.transport?.closeLocal?.();
+				const session = this.#session;
+
+				if (!session) {
+					return;
+				}
+
+				const writeResult = this.#write?.(GOAWAY_NO_ERROR_FRAME);
+
+				if (this.#isThenable(writeResult)) {
+					writeResult.then(() => {
+						session.closeLocal();
+					}, () => {
+						// If the write fails, keep local writes open and wait for remote teardown.
+					});
+				} else if (writeResult !== false) {
+					session.closeLocal();
+				}
 			} catch { /* ignore */ }
 		}
 	}
@@ -275,7 +291,7 @@ export class Handoff {
 		this.#mode = "terminal";
 		this.#closing = false;
 		this.#frameBuffer = Buffer.alloc(0);
-		session.transport?.closeLocal?.();
+		session.closeLocal();
 		try { session.client?.destroy(); } catch { /* ignore */ }
 		this.#onReset?.();
 	}

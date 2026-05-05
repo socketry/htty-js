@@ -26,8 +26,8 @@ import {Handoff} from "./Handoff.js";
  *
  * ── Process handle interface ──────────────────────────────────────────────
  *
- *   PTY  — { onData(cb), onExit(cb), write(data), resize(cols, rows), kill() }
- *   Pipe — { onStdout(cb), onStderr(cb), onExit(cb), write(data), resize(), kill() }
+ *   PTY  — { onData(cb), onExit(cb), write(data, options?), resize(cols, rows), kill() }
+ *   Pipe — { onStdout(cb), onStderr(cb), onExit(cb), write(data, options?), resize(), kill() }
  *
  * ── Invariants ────────────────────────────────────────────────────────────
  *

@@ -4,6 +4,15 @@ import test from "node:test";
 import {encodeBootstrap, SESSION_STATUS} from "../../HTTY.js";
 import {Handoff} from "../../HTTY/Handoff.js";
 
+const GOAWAY_NO_ERROR_FRAME = Buffer.from([
+	0x00, 0x00, 0x08,
+	0x07,
+	0x00,
+	0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,
+]);
+
 function makeHandoff(options = {}) {
 	const writes = [];
 	const stateEvents = [];
@@ -101,34 +110,41 @@ test("interrupt keeps session active until the server's GOAWAY arrives", () => {
 test("interrupt is idempotent while waiting for server GOAWAY", () => {
 	const {handoff, writes} = makeHandoff();
 	handoff.activate();
-	const session = handoff.session;
-	let calls = 0;
-	session.sendGoaway = () => {
-		calls += 1;
-		return true;
-	};
 	
 	handoff.interrupt();
 	handoff.interrupt();
 	
-	assert.equal(calls, 1);
-	assert.equal(writes.length, 0, "manual GOAWAY fallback should not be used when client path succeeds");
+	assert.equal(writes.length, 1, "interrupt should write a single manual GOAWAY frame");
+	assert.deepEqual(writes[0], GOAWAY_NO_ERROR_FRAME);
 });
 
-test("interrupt suppresses subsequent client writes before reset", () => {
-	const {handoff, writes} = makeHandoff();
+test("interrupt closes local transport after flush-aware GOAWAY write resolves", async () => {
+	const resolvers = [];
+	const writes = [];
+	const {handoff} = makeHandoff({
+		write: (chunk) => {
+			writes.push(chunk);
+			return new Promise((resolve) => {
+				resolvers.push(resolve);
+			});
+		},
+	});
 	handoff.activate();
 	const session = handoff.session;
-	session.sendGoaway = () => true;
 
-	// interrupt() should avoid manual GOAWAY when the client path succeeds.
-	const writesBeforeInterrupt = writes.length;
 	handoff.interrupt();
-	assert.equal(writes.length, writesBeforeInterrupt, "manual GOAWAY should not be written when client path succeeds");
+	assert.equal(writes.length, 1);
+	assert.deepEqual(writes[0], GOAWAY_NO_ERROR_FRAME);
 
-	// Any further client-side writes during the waiting period must be suppressed.
+	// Before GOAWAY write resolves, local writes are still open.
 	session.transport.write(Buffer.from("post-interrupt-write"));
-	assert.equal(writes.length, writesBeforeInterrupt, "post-interrupt client writes must be suppressed");
+	assert.equal(writes.length, 2);
+
+	// After GOAWAY write resolves, local writes are closed.
+	resolvers[0]?.();
+	await Promise.resolve();
+	session.transport.write(Buffer.from("post-flush-write"));
+	assert.equal(writes.length, 2, "local writes should be closed after GOAWAY flush");
 });
 
 test("session is nullified immediately when the server's GOAWAY arrives", () => {

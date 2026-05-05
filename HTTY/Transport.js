@@ -42,7 +42,6 @@ export class Transport extends Duplex {
 				callback();
 				return;
 			}
-			
 			if (buffer.length > 0) {
 				this.writeChunk(buffer);
 			}
