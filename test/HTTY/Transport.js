@@ -18,7 +18,7 @@ test("drops writes after transport is closed", async () => {
 	const writes = [];
 	const transport = new Transport((chunk) => writes.push(chunk));
 	
-	transport.closeTransport();
+	transport.closeLocal();
 	transport.write(Buffer.from("late"));
 	transport.end();
 	

@@ -37,13 +37,14 @@ export class Transport extends Duplex {
 
 	_write(chunk, _encoding, callback) {
 		try {
-			if (this.localClosed) {
+			const buffer = chunkToBuffer(chunk);
+			if (this.localClosed || this.remoteClosed) {
 				callback();
 				return;
 			}
 			
-			if (chunk.length > 0) {
-				this.writeChunk(chunkToBuffer(chunk));
+			if (buffer.length > 0) {
+				this.writeChunk(buffer);
 			}
 			callback();
 		} catch (error) {
@@ -61,16 +62,17 @@ export class Transport extends Duplex {
 	}
 
 	acceptChunk(chunk) {
-		this.push(chunkToBuffer(chunk, "latin1"));
+		const buffer = chunkToBuffer(chunk, "latin1");
+		this.push(buffer);
 	}
 
-	closeTransport() {
+	closeLocal() {
 		if (!this.localClosed) {
 			this.localClosed = true;
 		}
 	}
 
-	endRemote() {
+	closeRemote() {
 		if (!this.remoteClosed) {
 			this.remoteClosed = true;
 			this.push(null);
@@ -78,8 +80,8 @@ export class Transport extends Duplex {
 	}
 
 	shutdown() {
-		this.closeTransport();
-		this.endRemote();
+		this.closeLocal();
+		this.closeRemote();
 		this.destroy();
 	}
 }

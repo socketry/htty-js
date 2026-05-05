@@ -193,7 +193,13 @@ export class Handoff {
 			}
 			
 			this.#closing = true;
-			try { this.#write?.(GOAWAY_NO_ERROR_FRAME); } catch { /* ignore */ }
+			try {
+				this.#session?.sendGoaway?.({
+					errorCode: 0,
+					lastStreamID: 0,
+				});
+				this.#session?.transport?.closeLocal?.();
+			} catch { /* ignore */ }
 		}
 	}
 
@@ -269,6 +275,7 @@ export class Handoff {
 		this.#mode = "terminal";
 		this.#closing = false;
 		this.#frameBuffer = Buffer.alloc(0);
+		session.transport?.closeLocal?.();
 		try { session.client?.destroy(); } catch { /* ignore */ }
 		this.#onReset?.();
 	}

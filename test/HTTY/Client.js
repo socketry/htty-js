@@ -37,7 +37,7 @@ test("tracks client session state transitions", async () => {
 	
 	// CLOSED is emitted asynchronously when the http/2 session drains.
 	// Signal EOF on the transport to simulate the remote side disconnecting.
-	session.transport.endRemote();
+		session.transport.closeRemote();
 	
 	await new Promise((resolve) => {
 		if (session.status === SESSION_STATUS.CLOSED) { resolve(); return; }

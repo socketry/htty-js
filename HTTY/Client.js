@@ -136,6 +136,22 @@ export class Client extends EventEmitter {
 		this.transport.acceptChunk(chunk);
 	}
 
+	sendGoaway({errorCode = http2.constants.NGHTTP2_NO_ERROR, lastStreamID = 0, opaqueData} = {}) {
+		const client = this.start();
+
+		if (!client || client.closed || client.destroyed) {
+			return false;
+		}
+
+		if (opaqueData === undefined) {
+			client.goaway(errorCode, lastStreamID);
+		} else {
+			client.goaway(errorCode, lastStreamID, opaqueData);
+		}
+
+		return true;
+	}
+
 	async request({path = "/", method = "GET", headers = {}, body} = {}) {
 		const client = this.start();
 

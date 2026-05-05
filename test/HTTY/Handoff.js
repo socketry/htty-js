@@ -101,11 +101,34 @@ test("interrupt keeps session active until the server's GOAWAY arrives", () => {
 test("interrupt is idempotent while waiting for server GOAWAY", () => {
 	const {handoff, writes} = makeHandoff();
 	handoff.activate();
+	const session = handoff.session;
+	let calls = 0;
+	session.sendGoaway = () => {
+		calls += 1;
+		return true;
+	};
 	
 	handoff.interrupt();
 	handoff.interrupt();
 	
-	assert.equal(writes.length, 1);
+	assert.equal(calls, 1);
+	assert.equal(writes.length, 0, "manual GOAWAY fallback should not be used when client path succeeds");
+});
+
+test("interrupt suppresses subsequent client writes before reset", () => {
+	const {handoff, writes} = makeHandoff();
+	handoff.activate();
+	const session = handoff.session;
+	session.sendGoaway = () => true;
+
+	// interrupt() should avoid manual GOAWAY when the client path succeeds.
+	const writesBeforeInterrupt = writes.length;
+	handoff.interrupt();
+	assert.equal(writes.length, writesBeforeInterrupt, "manual GOAWAY should not be written when client path succeeds");
+
+	// Any further client-side writes during the waiting period must be suppressed.
+	session.transport.write(Buffer.from("post-interrupt-write"));
+	assert.equal(writes.length, writesBeforeInterrupt, "post-interrupt client writes must be suppressed");
 });
 
 test("session is nullified immediately when the server's GOAWAY arrives", () => {
@@ -121,6 +144,27 @@ test("session is nullified immediately when the server's GOAWAY arrives", () => 
 	assert.equal(handoff.session, null);
 	assert.equal(handoff.mode, "terminal");
 	assert.equal(resets.length, 1);
+});
+
+test("reset suppresses teardown writes emitted during client destroy", () => {
+	const {handoff, writes, resets} = makeHandoff();
+	handoff.activate();
+	const session = handoff.session;
+
+	const originalDestroy = session.client.destroy.bind(session.client);
+	session.client.destroy = (...args) => {
+		// Simulate Node/http2 emitting a final local write during teardown.
+		session.transport.write(Buffer.from("teardown-write"));
+		return originalDestroy(...args);
+	};
+
+	// Simulate server GOAWAY triggering #resetSession.
+	session.emit("state", {status: SESSION_STATUS.CLOSING, phase: "goaway"});
+
+	assert.equal(handoff.isActive, false);
+	assert.equal(handoff.mode, "terminal");
+	assert.equal(resets.length, 1);
+	assert.equal(writes.length, 0, "teardown write must be suppressed during reset");
 });
 
 test("handleChunk resets on command-side GOAWAY and returns trailing terminal data", () => {
