@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v0.5.1
 
   - Add `Client.closeLocal()` as a delegation method so callers no longer need to reach into `client.transport` directly.
   - Defer closing the local transport until after the GOAWAY write has flushed, ensuring the frame is delivered before outbound writes are dropped.
