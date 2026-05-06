@@ -1,7 +1,7 @@
 {
 	"name": "@socketry/htty",
 	"type": "module",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"description": "HTTY transport, client, and server primitives for JavaScript.",
 	"main": "HTTY.js",
 	"exports": {
