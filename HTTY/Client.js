@@ -153,11 +153,13 @@ export class Client extends EventEmitter {
 			stream.on("response", (incomingHeaders) => {
 				responseStatus = Number(incomingHeaders[":status"] || 0);
 				responseHeaders = sanitizeResponseHeaders(incomingHeaders);
+				// 101, 204, 205, 304 are null-body statuses per the Fetch spec.
+				const nullBodyStatus = responseStatus === 101 || responseStatus === 204 || responseStatus === 205 || responseStatus === 304;
 				settled = true;
 				resolve({
 					status: responseStatus,
 					headers: responseHeaders,
-					body: stream,
+					body: nullBodyStatus ? null : stream,
 					stream,
 				});
 			});

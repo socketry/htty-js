@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Set `body` to `null` in the `Client.request()` response for null-body statuses (101, 204, 205, 304), matching Fetch API semantics.
+
 ## v0.5.2
 
   - Fix `Handoff` frame-boundary parsing to avoid re-accumulating already-processed frames across chunks; incomplete trailing frames are now buffered separately, preventing data from being forwarded twice.
