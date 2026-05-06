@@ -80,7 +80,7 @@ export class Handoff {
 	#session = null;
 	#mode = "terminal";
 	#closing = false;
-	#frameBuffer = Buffer.alloc(0);
+	#frameBuffer = Buffer.alloc(0); // incomplete frame bytes carried over from the previous chunk
 
 	#isThenable(value) {
 		return value && (typeof value === "object" || typeof value === "function") && typeof value.then === "function";
@@ -116,49 +116,52 @@ export class Handoff {
 		if (!this.#session) {
 			return {forwardedData: null, terminalData: chunk};
 		}
-		
-		const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "latin1");
-		this.#frameBuffer = this.#frameBuffer.length > 0 ? Buffer.concat([this.#frameBuffer, data]) : data;
-		
-		const frames = [];
+
+		// Prepend any bytes buffered from the previous incomplete frame.
+		const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "latin1");
+		const data = this.#frameBuffer.length > 0
+			? Buffer.concat([this.#frameBuffer, incoming])
+			: incoming;
+		this.#frameBuffer = Buffer.alloc(0);
+
+		// Walk frame-by-frame (header → skip payload) looking for GOAWAY.
+		// Everything after a GOAWAY belongs to the terminal, not the HTTP/2 session.
 		let offset = 0;
-		
-		while (offset + 9 <= this.#frameBuffer.length) {
-			const length = (this.#frameBuffer[offset] << 16) | (this.#frameBuffer[offset + 1] << 8) | this.#frameBuffer[offset + 2];
-			const type = this.#frameBuffer[offset + 3];
-			const streamId = this.#frameBuffer.readUInt32BE(offset + 5) & 0x7fffffff;
+		while (offset + 9 <= data.length) {
+			const length = (data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2];
+			const type = data[offset + 3];
+			const streamId = data.readUInt32BE(offset + 5) & 0x7fffffff;
 			const frameEnd = offset + 9 + length;
-			
-			if (frameEnd > this.#frameBuffer.length) {
-				break;
-			}
-			
+
+			// Wait for the full frame (header + payload) before acting on it — including GOAWAY.
+			// This prevents the 8 payload bytes of a partially-arrived GOAWAY from leaking as
+			// terminal data on the next chunk.
+			if (frameEnd > data.length) break; // incomplete frame — buffer from here
+
 			if (type === 0x07 && streamId === 0) {
 				const session = this.#session;
-				const forwardedData = frames.length > 0 ? Buffer.concat(frames) : Buffer.alloc(0);
-				const terminalData = this.#frameBuffer.subarray(frameEnd);
-				
-				if (forwardedData.length > 0) {
-					session.handleChunk(forwardedData);
+				const http2Data = data.subarray(0, offset); // frames before GOAWAY, not including GOAWAY itself
+				const terminalData = data.subarray(frameEnd); // bytes after the GOAWAY frame
+				if (http2Data.length > 0) {
+					session.handleChunk(http2Data);
 				}
-				
 				this.#resetSession(session);
-				
-				return {forwardedData, terminalData};
+				return {forwardedData: http2Data.length > 0 ? http2Data : Buffer.alloc(0), terminalData: terminalData.length ? terminalData : null};
 			}
-			
-			frames.push(this.#frameBuffer.subarray(offset, frameEnd));
+
 			offset = frameEnd;
 		}
-		
-		this.#frameBuffer = this.#frameBuffer.subarray(offset);
-		const forwardedData = frames.length > 0 ? Buffer.concat(frames) : null;
-		
-		if (forwardedData) {
+
+		// Buffer any trailing bytes that don't form a complete frame (partial header or partial payload).
+		if (offset < data.length) {
+			this.#frameBuffer = data.subarray(offset);
+		}
+
+		const forwardedData = data.subarray(0, offset);
+		if (forwardedData.length > 0) {
 			this.#session.handleChunk(forwardedData);
 		}
-		
-		return {forwardedData, terminalData: null};
+		return {forwardedData: forwardedData.length > 0 ? forwardedData : null, terminalData: null};
 	}
 
 	// ── Transitions ────────────────────────────────────────────────────────

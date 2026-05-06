@@ -161,6 +161,11 @@ export class Client extends EventEmitter {
 					stream,
 				});
 			});
+			stream.on("close", () => {
+				if (!settled) {
+					reject(new Error(`stream closed before response (state=${stream.state})`));
+				}
+			});
 			stream.on("error", (error) => {
 				if (!settled) {
 					reject(error);

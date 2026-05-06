@@ -1,5 +1,10 @@
 # Releases
 
+## Unreleased
+
+  - Fix `Handoff` frame-boundary parsing to avoid re-accumulating already-processed frames across chunks; incomplete trailing frames are now buffered separately, preventing data from being forwarded twice.
+  - Reject the `Client.request()` promise immediately when the HTTP/2 stream closes before a response is received, rather than hanging indefinitely.
+
 ## v0.5.1
 
   - Add `Client.closeLocal()` as a delegation method so callers no longer need to reach into `client.transport` directly.

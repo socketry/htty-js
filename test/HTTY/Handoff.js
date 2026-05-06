@@ -331,3 +331,104 @@ test("onReset also fires on CLOSED or ERROR without a prior GOAWAY (fallback)", 
 	assert.equal(resets.length, 1);
 	assert.equal(handoff.isActive, false);
 });
+
+// ── Frame-splitting / byte-by-byte tests ─────────────────────────────────────
+
+// A minimal DATA frame (stream 1, "hello") used as a forwarded payload in splitting tests.
+const DATA_FRAME = Buffer.from([
+	0x00, 0x00, 0x05,        // length = 5
+	0x00,                    // type = DATA
+	0x00,                    // flags
+	0x00, 0x00, 0x00, 0x01,  // stream id = 1
+	0x68, 0x65, 0x6c, 0x6c, 0x6f,  // "hello"
+]);
+
+// GOAWAY frame used in splitting tests (last-stream-id=1, NO_ERROR).
+const GOAWAY_FRAME = Buffer.from([
+	0x00, 0x00, 0x08,
+	0x07,
+	0x00,
+	0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x01,
+	0x00, 0x00, 0x00, 0x00,
+]);
+
+test("handleChunk: GOAWAY header without payload is buffered — payload bytes are not leaked as terminal data", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+
+	// Feed only the 9-byte GOAWAY header — session must NOT reset yet.
+	handoff.handleChunk(GOAWAY_FRAME.subarray(0, 9));
+	assert.equal(handoff.isActive, true, "session must stay active while GOAWAY payload is outstanding");
+	assert.equal(resets.length, 0, "no reset until full GOAWAY has arrived");
+
+	// Feed the remaining 8 payload bytes plus terminal text.
+	const result = handoff.handleChunk(Buffer.concat([GOAWAY_FRAME.subarray(9), Buffer.from("prompt")]));
+	assert.equal(handoff.isActive, false, "session reset after full GOAWAY");
+	assert.equal(resets.length, 1);
+	assert.deepEqual(result.forwardedData, Buffer.alloc(0));
+	assert.equal(result.terminalData.toString(), "prompt");
+});
+
+test("handleChunk: DATA frame then GOAWAY fed one byte at a time", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+
+	const corpus = Buffer.concat([DATA_FRAME, GOAWAY_FRAME, Buffer.from("prompt")]);
+
+	const forwardedChunks = [];
+	const terminalChunks = [];
+
+	for (const byte of corpus) {
+		const result = handoff.handleChunk(Buffer.from([byte]));
+		if (result.forwardedData?.length > 0) forwardedChunks.push(result.forwardedData);
+		if (result.terminalData) {
+			const b = Buffer.isBuffer(result.terminalData) ? result.terminalData : Buffer.from(result.terminalData, "latin1");
+			if (b.length > 0) terminalChunks.push(b);
+		}
+	}
+
+	assert.equal(handoff.isActive, false, "session reset after GOAWAY");
+	assert.equal(resets.length, 1, "exactly one reset");
+	assert.deepEqual(Buffer.concat(forwardedChunks), DATA_FRAME, "DATA frame forwarded exactly");
+	assert.equal(Buffer.concat(terminalChunks).toString(), "prompt", "terminal bytes returned after GOAWAY");
+});
+
+test("handleChunk: two DATA frames then GOAWAY fed one byte at a time", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+
+	const corpus = Buffer.concat([DATA_FRAME, DATA_FRAME, GOAWAY_FRAME, Buffer.from("$")]);
+
+	const forwardedChunks = [];
+	const terminalChunks = [];
+
+	for (const byte of corpus) {
+		const result = handoff.handleChunk(Buffer.from([byte]));
+		if (result.forwardedData?.length > 0) forwardedChunks.push(result.forwardedData);
+		if (result.terminalData) {
+			const b = Buffer.isBuffer(result.terminalData) ? result.terminalData : Buffer.from(result.terminalData, "latin1");
+			if (b.length > 0) terminalChunks.push(b);
+		}
+	}
+
+	assert.equal(handoff.isActive, false);
+	assert.equal(resets.length, 1);
+	assert.deepEqual(Buffer.concat(forwardedChunks), Buffer.concat([DATA_FRAME, DATA_FRAME]));
+	assert.equal(Buffer.concat(terminalChunks).toString(), "$");
+});
+
+test("handleChunk: GOAWAY only, no trailing bytes, fed one byte at a time", () => {
+	const {handoff, resets} = makeHandoff();
+	handoff.activate();
+
+	let lastResult;
+	for (const byte of GOAWAY_FRAME) {
+		lastResult = handoff.handleChunk(Buffer.from([byte]));
+	}
+
+	assert.equal(handoff.isActive, false);
+	assert.equal(resets.length, 1);
+	assert.deepEqual(lastResult.forwardedData, Buffer.alloc(0));
+	assert.equal(lastResult.terminalData, null);
+});
